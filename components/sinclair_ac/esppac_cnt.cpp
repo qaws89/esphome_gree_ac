@@ -130,7 +130,7 @@ void SinclairACCNT::control(const climate::ClimateCall &call)
                 ESP_LOGV(TAG, "Unsupported swing mode requested");
                 /* both center */
                 this->vertical_swing_state_   =   vertical_swing_options::CMID;
-                this->horizontal_swing_state_ = horizontal_swing_options::CMID;
+                this->horizontal_swing_state_ = vertical_swing_options::CMID;
                 break;
         }
     }
@@ -721,6 +721,11 @@ const char* SinclairACCNT::determine_fan_mode()
     uint8_t fanSpeed2 = (this->serialProcess_.data[protocol::REPORT_FAN_SPD2_BYTE]  & protocol::REPORT_FAN_SPD2_MASK) >> protocol::REPORT_FAN_SPD2_POS;
     bool    fanQuiet  = (this->serialProcess_.data[protocol::REPORT_FAN_QUIET_BYTE] & protocol::REPORT_FAN_QUIET_MASK) != 0;
     bool    fanTurbo  = (this->serialProcess_.data[protocol::REPORT_FAN_TURBO_BYTE] & protocol::REPORT_FAN_TURBO_MASK) != 0;
+
+    /* --- ОТЛАДОЧНЫЙ ВЫВОД --- */
+    ESP_LOGD(TAG, "FAN_DEBUG: s1=%d s2=%d quiet=%d turbo=%d", fanSpeed1, fanSpeed2, fanQuiet, fanTurbo);
+    /* --- КОНЕЦ ОТЛАДОЧНОГО ВЫВОДА --- */
+
     /* we have extracted all the data, let's do the processing */
     if      (fanSpeed1 == 0 && fanSpeed2 == 0 && fanQuiet == false && fanTurbo == false)
     {
