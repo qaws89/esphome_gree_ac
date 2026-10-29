@@ -836,4 +836,154 @@ std::string SinclairACCNT::determine_display()
         case protocol::REPORT_DISP_MODE_AUTO:
             this->display_mode_internal_ = display_options::AUTO;
             break;
-        case protocol::
+        case protocol::REPORT_DISP_MODE_SET:
+            this->display_mode_internal_ = display_options::SET;
+            break;
+        case protocol::REPORT_DISP_MODE_ACT:
+            this->display_mode_internal_ = display_options::ACT;
+            break;
+        case protocol::REPORT_DISP_MODE_OUT:
+            this->display_mode_internal_ = display_options::OUT;
+            break;
+        default:
+            ESP_LOGW(TAG, "Received unknown display mode");
+            this->display_mode_internal_ = display_options::AUTO;
+            break;
+    }
+
+    if (this->display_power_internal_)
+    {
+        return this->display_mode_internal_;
+    }
+    else
+    {
+        return display_options::OFF;
+    }
+}
+
+std::string SinclairACCNT::determine_display_unit()
+{
+    if (this->serialProcess_.data[protocol::REPORT_DISP_F_BYTE] & protocol::REPORT_DISP_F_MASK)
+    {
+        return display_unit_options::DEGF;
+    }
+    else
+    {
+        return display_unit_options::DEGC;
+    }
+}
+
+bool SinclairACCNT::determine_plasma(){
+    bool plasma1 = (this->serialProcess_.data[protocol::REPORT_PLASMA1_BYTE] & protocol::REPORT_PLASMA1_MASK) != 0;
+    bool plasma2 = (this->serialProcess_.data[protocol::REPORT_PLASMA2_BYTE] & protocol::REPORT_PLASMA2_MASK) != 0;
+    return plasma1 || plasma2;
+}
+
+bool SinclairACCNT::determine_sleep(){
+    return (this->serialProcess_.data[protocol::REPORT_SLEEP_BYTE] & protocol::REPORT_SLEEP_MASK) != 0;
+}
+
+bool SinclairACCNT::determine_xfan(){
+    return (this->serialProcess_.data[protocol::REPORT_XFAN_BYTE] & protocol::REPORT_XFAN_MASK) != 0;
+}
+
+bool SinclairACCNT::determine_save(){
+    return (this->serialProcess_.data[protocol::REPORT_SAVE_BYTE] & protocol::REPORT_SAVE_MASK) != 0;
+}
+
+
+/*
+ * Sensor handling
+ */
+
+void SinclairACCNT::on_vertical_swing_change(const std::string &swing)
+{
+    if (this->state_ != ACState::Ready)
+        return;
+
+    ESP_LOGD(TAG, "Setting vertical swing position");
+
+    this->update_ = ACUpdate::UpdateStart;
+    this->vertical_swing_state_ = swing;
+}
+
+void SinclairACCNT::on_horizontal_swing_change(const std::string &swing)
+{
+    if (this->state_ != ACState::Ready)
+        return;
+
+    ESP_LOGD(TAG, "Setting horizontal swing position");
+
+    this->update_ = ACUpdate::UpdateStart;
+    this->horizontal_swing_state_ = swing;
+}
+
+void SinclairACCNT::on_display_change(const std::string &display)
+{
+    if (this->state_ != ACState::Ready)
+        return;
+
+    ESP_LOGD(TAG, "Setting display mode");
+
+    this->update_ = ACUpdate::UpdateStart;
+    this->display_state_ = display;
+}
+
+void SinclairACCNT::on_display_unit_change(const std::string &display_unit)
+{
+    if (this->state_ != ACState::Ready)
+        return;
+
+    ESP_LOGD(TAG, "Setting display unit");
+
+    this->update_ = ACUpdate::UpdateStart;
+    this->display_unit_state_ = display_unit;
+}
+
+void SinclairACCNT::on_plasma_change(bool plasma)
+{
+    if (this->state_ != ACState::Ready)
+        return;
+
+    ESP_LOGD(TAG, "Setting plasma");
+
+    this->update_ = ACUpdate::UpdateStart;
+    this->plasma_state_ = plasma;
+}
+
+void SinclairACCNT::on_sleep_change(bool sleep)
+{
+    if (this->state_ != ACState::Ready)
+        return;
+
+    ESP_LOGD(TAG, "Setting sleep");
+
+    this->update_ = ACUpdate::UpdateStart;
+    this->sleep_state_ = sleep;
+}
+
+void SinclairACCNT::on_xfan_change(bool xfan)
+{
+    if (this->state_ != ACState::Ready)
+        return;
+
+    ESP_LOGD(TAG, "Setting xfan");
+
+    this->update_ = ACUpdate::UpdateStart;
+    this->xfan_state_ = xfan;
+}
+
+void SinclairACCNT::on_save_change(bool save)
+{
+    if (this->state_ != ACState::Ready)
+        return;
+
+    ESP_LOGD(TAG, "Setting save");
+
+    this->update_ = ACUpdate::UpdateStart;
+    this->save_state_ = save;
+}
+
+}  // namespace CNT
+}  // namespace sinclair_ac
+}  // namespace esphome
