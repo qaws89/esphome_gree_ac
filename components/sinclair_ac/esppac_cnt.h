@@ -234,7 +234,8 @@ void SinclairACCNT::send_packet()
         case ACUpdate::UpdateClear: this->update_ = ACUpdate::NoUpdate; break;
         default: this->update_ = ACUpdate::NoUpdate; break;
     }
-}bool SinclairACCNT::verify_packet()
+}
+bool SinclairACCNT::verify_packet()
 {
     if (this->serialProcess_.data.size() < 5) { ESP_LOGW(TAG, "Dropping invalid packet (length)"); return false; }
     bool allowed = false;
