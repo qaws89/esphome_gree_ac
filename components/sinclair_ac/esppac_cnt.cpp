@@ -38,4 +38,7 @@ void SinclairACCNT::on_display_unit_change(const std::string &s){if(this->state_
 void SinclairACCNT::on_plasma_change(bool v){if(this->state_!=ACState::Ready)return;this->update_=ACUpdate::UpdateStart;this->plasma_state_=v;}
 void SinclairACCNT::on_sleep_change(bool v){if(this->state_!=ACState::Ready)return;this->update_=ACUpdate::UpdateStart;this->sleep_state_=v;}
 void SinclairACCNT::on_xfan_change(bool v){if(this->state_!=ACState::Ready)return;this->update_=ACUpdate::UpdateStart;this->xfan_state_=v;}
-void SinclairACCNT::on_save_change(bool v){if(this->state_!=ACState::Ready)return;this->update_=ACUpdate::UpdateStart;this->save_st
+void SinclairACCNT::on_save_change(bool v){if(this->state_!=ACState::Ready)return;this->update_=ACUpdate::UpdateStart;this->save_state_=v;}
+}  // namespace CNT
+}  // namespace sinclair_ac
+}  // namespace esphome
