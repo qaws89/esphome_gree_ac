@@ -124,10 +124,21 @@ void SinclairACCNT::send_packet() {
   packet[protocol::REPORT_MODE_BYTE] |= (mode << protocol::REPORT_MODE_POS);
   if (power) packet[protocol::REPORT_PWR_BYTE] |= protocol::REPORT_PWR_MASK;
 
+  // === ТЕМПЕРАТУРА (ELECTROLUX) ===
   int temp_int = (int) roundf(this->target_temperature);
-  if (temp_int < 16) temp_int = 16;
+  if (temp_int < 8) temp_int = 8;
   if (temp_int > 30) temp_int = 30;
-  packet[protocol::REPORT_TEMP_SET_BYTE] = (uint8_t)((temp_int - 16) * 0x10);
+
+  if (temp_int <= 15) {
+    packet[protocol::REPORT_TEMP_ELX_LOW_BYTE] =
+        (uint8_t)((temp_int - protocol::REPORT_TEMP_ELX_LOW_BASE) * protocol::REPORT_TEMP_ELX_LOW_STEP);
+    packet[protocol::REPORT_TEMP_ELX_HIGH_BYTE] = protocol::REPORT_TEMP_ELX_HIGH_OFF;
+  } else {
+    packet[protocol::REPORT_TEMP_ELX_LOW_BYTE] = 0x00;
+    packet[protocol::REPORT_TEMP_ELX_HIGH_BYTE] =
+        (uint8_t)(protocol::REPORT_TEMP_ELX_HIGH_OFF +
+                  (temp_int - protocol::REPORT_TEMP_ELX_HIGH_BASE) * protocol::REPORT_TEMP_ELX_HIGH_STEP);
+  }
 
   uint8_t fanSpeed1 = 8, fanSpeed2 = 0;
   bool fanQuiet = false, fanTurbo = false;
@@ -345,7 +356,7 @@ std::string SinclairACCNT::determine_vertical_swing() {
     case protocol::REPORT_VSWING_MID: return vertical_swing_options::MID;
     case protocol::REPORT_VSWING_MIDU: return vertical_swing_options::MIDU;
     case protocol::REPORT_VSWING_UP: return vertical_swing_options::UP;
-    case protocol::REPORT_VSWING_CDOWN: return vertical_swing_options::CDOWN;
+    case protocol::REPORT_VSWING_CDOWN: return vertical_        return vertical_swing_options::CDOWN;
     case protocol::REPORT_VSWING_CMIDD: return vertical_swing_options::CMIDD;
     case protocol::REPORT_VSWING_CMID: return vertical_swing_options::CMID;
     case protocol::REPORT_VSWING_CMIDU: return vertical_swing_options::CMIDU;
