@@ -389,7 +389,6 @@ std::string SinclairACCNT::determine_display() {
 }
 
 std::string SinclairACCNT::determine_display_unit() {
-  return (this->serialProcess_.data[protocol::REPORT_DISP_F_BYTE] & protocol::REPORT_DISP_F_MASK) ? display_unit_optistd::string SinclairACCNT::determine_display_unit() {
   return (this->serialProcess_.data[protocol::REPORT_DISP_F_BYTE] & protocol::REPORT_DISP_F_MASK)
              ? display_unit_options::DEGF
              : display_unit_options::DEGC;
