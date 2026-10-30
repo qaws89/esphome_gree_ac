@@ -1,43 +1,150 @@
-// based on: https://github.com/DomiStyle/esphome-panasonic-ac
-#include "esppac_cnt.h"
-namespace esphome {
-namespace sinclair_ac {
-namespace CNT {
-static const char *const TAG = "sinclair_ac.serial";
-void SinclairACCNT::setup(){SinclairAC::setup();ESP_LOGD(TAG,"Using serial protocol for Sinclair AC");}
-void SinclairACCNT::loop(){SinclairAC::loop();if(this->serialProcess_.state==STATE_COMPLETE){this->serialProcess_.state=STATE_RESTART;this->wait_response_=false;log_packet(this->serialProcess_.data);if(!verify_packet())return;this->last_packet_received_=millis();if(this->state_!=ACState::Ready){this->state_=ACState::Ready;Component::status_clear_error();this->last_packet_sent_=millis();}if(this->update_==ACUpdate::NoUpdate)handle_packet();}send_packet();if(millis()-this->last_packet_received_>=protocol::TIME_TIMEOUT_INACTIVE_MS){if(this->state_!=ACState::Initializing){this->state_=ACState::Initializing;Component::status_set_error();}}}
-void SinclairACCNT::control(const climate::ClimateCall &call){if(this->state_!=ACState::Ready)return;if(call.get_mode().has_value()){this->update_=ACUpdate::UpdateStart;this->mode=*call.get_mode();}if(call.get_target_temperature().has_value()){this->update_=ACUpdate::UpdateStart;this->target_temperature=*call.get_target_temperature();}if(call.has_custom_fan_mode()){this->update_=ACUpdate::UpdateStart;this->set_custom_fan_mode_(call.get_custom_fan_mode());}if(call.get_swing_mode().has_value()){this->update_=ACUpdate::UpdateStart;switch(*call.get_swing_mode()){case climate::CLIMATE_SWING_BOTH:this->vertical_swing_state_=vertical_swing_options::FULL;this->horizontal_swing_state_=horizontal_swing_options::FULL;break;case climate::CLIMATE_SWING_OFF:this->vertical_swing_state_=vertical_swing_options::CMID;this->horizontal_swing_state_=vertical_swing_options::CMID;break;case climate::CLIMATE_SWING_VERTICAL:this->vertical_swing_state_=vertical_swing_options::FULL;this->horizontal_swing_state_=vertical_swing_options::CMID;break;case climate::CLIMATE_SWING_HORIZONTAL:this->vertical_swing_state_=vertical_swing_options::CMID;this->horizontal_swing_state_=vertical_swing_options::FULL;break;default:this->vertical_swing_state_=vertical_swing_options::CMID;this->horizontal_swing_state_=vertical_swing_options::CMID;break;}}}
-void SinclairACCNT::send_packet(){std::vector<uint8_t> packet(protocol::SET_PACKET_LEN,0);if(this->wait_response_&&this->update_==ACUpdate::NoUpdate&&(millis()-this->last_packet_sent_)<protocol::TIME_REFRESH_PERIOD_MS)return;packet[protocol::SET_CONST_02_BYTE]=protocol::SET_CONST_02_VAL;packet[protocol::SET_CONST_BIT_BYTE]=protocol::SET_CONST_BIT_MASK;switch(this->update_){default:case ACUpdate::NoUpdate:packet[protocol::SET_NOCHANGE_BYTE]|=protocol::SET_NOCHANGE_MASK;break;case ACUpdate::UpdateStart:packet[protocol::SET_AF_BYTE]=protocol::SET_AF_VAL;break;case ACUpdate::UpdateClear:break;}uint8_t mode=protocol::REPORT_MODE_AUTO;bool power=false;switch(this->mode){case climate::CLIMATE_MODE_AUTO:mode=protocol::REPORT_MODE_AUTO;power=true;break;case climate::CLIMATE_MODE_COOL:mode=protocol::REPORT_MODE_COOL;power=true;break;case climate::CLIMATE_MODE_DRY:mode=protocol::REPORT_MODE_DRY;power=true;break;case climate::CLIMATE_MODE_FAN_ONLY:mode=protocol::REPORT_MODE_FAN;power=true;break;case climate::CLIMATE_MODE_HEAT:mode=protocol::REPORT_MODE_HEAT;power=true;break;default:case climate::CLIMATE_MODE_OFF:switch(this->mode_internal_){case climate::CLIMATE_MODE_AUTO:mode=protocol::REPORT_MODE_AUTO;break;case climate::CLIMATE_MODE_COOL:mode=protocol::REPORT_MODE_COOL;break;case climate::CLIMATE_MODE_DRY:mode=protocol::REPORT_MODE_DRY;break;case climate::CLIMATE_MODE_FAN_ONLY:mode=protocol::REPORT_MODE_FAN;break;case climate::CLIMATE_MODE_HEAT:mode=protocol::REPORT_MODE_HEAT;break;}power=false;break;}packet[protocol::REPORT_MODE_BYTE]|=(mode<<protocol::REPORT_MODE_POS);if(power)packet[protocol::REPORT_PWR_BYTE]|=protocol::REPORT_PWR_MASK;
-if(this->target_temperature<16){uint8_t low=(uint8_t)(((uint8_t)this->target_temperature-7)<<4);packet[protocol::REPORT_TEMP_SET_LOW_BYTE]|=low;packet[protocol::REPORT_TEMP_SET_BYTE]|=(((16-protocol::REPORT_TEMP_SET_OFF)<<protocol::REPORT_TEMP_SET_POS)&protocol::REPORT_TEMP_SET_MASK);}else{uint8_t target_temperature=((((uint8_t)this->target_temperature)-protocol::REPORT_TEMP_SET_OFF)<<protocol::REPORT_TEMP_SET_POS);packet[protocol::REPORT_TEMP_SET_BYTE]|=(target_temperature&protocol::REPORT_TEMP_SET_MASK);}
-uint8_t fanSpeed1=8,fanSpeed2=0;bool fanQuiet=false,fanTurbo=false;if(this->has_custom_fan_mode()){const char* m=this->get_custom_fan_mode().c_str();if(strcmp(m,fan_modes::FAN_AUTO)==0){fanSpeed1=8;fanSpeed2=0;}else if(strcmp(m,fan_modes::FAN_LOW)==0){fanSpeed1=9;fanSpeed2=1;}else if(strcmp(m,fan_modes::FAN_QUIET)==0){fanSpeed1=9;fanSpeed2=1;fanQuiet=true;}else if(strcmp(m,fan_modes::FAN_MEDL)==0){fanSpeed1=10;fanSpeed2=2;}else if(strcmp(m,fan_modes::FAN_MED)==0){fanSpeed1=11;fanSpeed2=2;}else if(strcmp(m,fan_modes::FAN_MEDH)==0){fanSpeed1=12;fanSpeed2=3;}else if(strcmp(m,fan_modes::FAN_HIGH)==0){fanSpeed1=13;fanSpeed2=3;}else if(strcmp(m,fan_modes::FAN_TURBO)==0){fanSpeed1=8;fanSpeed2=0;fanTurbo=true;}}packet[protocol::REPORT_FAN_SPD1_BYTE]|=(fanSpeed1<<protocol::REPORT_FAN_SPD1_POS);packet[protocol::REPORT_FAN_SPD2_BYTE]|=(fanSpeed2<<protocol::REPORT_FAN_SPD2_POS);if(fanTurbo)packet[protocol::REPORT_FAN_TURBO_BYTE]|=protocol::REPORT_FAN_TURBO_MASK;if(fanQuiet)packet[protocol::REPORT_FAN_QUIET_BYTE]|=protocol::REPORT_FAN_QUIET_MASK;
-uint8_t vs=protocol::REPORT_VSWING_OFF;if(this->vertical_swing_state_==vertical_swing_options::OFF)vs=protocol::REPORT_VSWING_OFF;else if(this->vertical_swing_state_==vertical_swing_options::FULL)vs=protocol::REPORT_VSWING_FULL;else if(this->vertical_swing_state_==vertical_swing_options::DOWN)vs=protocol::REPORT_VSWING_DOWN;else if(this->vertical_swing_state_==vertical_swing_options::MIDD)vs=protocol::REPORT_VSWING_MIDD;else if(this->vertical_swing_state_==vertical_swing_options::MID)vs=protocol::REPORT_VSWING_MID;else if(this->vertical_swing_state_==vertical_swing_options::MIDU)vs=protocol::REPORT_VSWING_MIDU;else if(this->vertical_swing_state_==vertical_swing_options::UP)vs=protocol::REPORT_VSWING_UP;else if(this->vertical_swing_state_==vertical_swing_options::CDOWN)vs=protocol::REPORT_VSWING_CDOWN;else if(this->vertical_swing_state_==vertical_swing_options::CMIDD)vs=protocol::REPORT_VSWING_CMIDD;else if(this->vertical_swing_state_==vertical_swing_options::CMID)vs=protocol::REPORT_VSWING_CMID;else if(this->vertical_swing_state_==vertical_swing_options::CMIDU)vs=protocol::REPORT_VSWING_CMIDU;else if(this->vertical_swing_state_==vertical_swing_options::CUP)vs=protocol::REPORT_VSWING_CUP;packet[protocol::REPORT_VSWING_BYTE]|=(vs<<protocol::REPORT_VSWING_POS);
-uint8_t hs=protocol::REPORT_HSWING_OFF;if(this->horizontal_swing_state_==horizontal_swing_options::OFF)hs=protocol::REPORT_HSWING_OFF;else if(this->horizontal_swing_state_==horizontal_swing_options::FULL)hs=protocol::REPORT_HSWING_FULL;else if(this->horizontal_swing_state_==horizontal_swing_options::CLEFT)hs=protocol::REPORT_HSWING_CLEFT;else if(this->horizontal_swing_state_==horizontal_swing_options::CMIDL)hs=protocol::REPORT_HSWING_CMIDL;else if(this->horizontal_swing_state_==horizontal_swing_options::CMID)hs=protocol::REPORT_HSWING_CMID;else if(this->horizontal_swing_state_==horizontal_swing_options::CMIDR)hs=protocol::REPORT_HSWING_CMIDR;else if(this->horizontal_swing_state_==horizontal_swing_options::CRIGHT)hs=protocol::REPORT_HSWING_CRIGHT;packet[protocol::REPORT_HSWING_BYTE]|=(hs<<protocol::REPORT_HSWING_POS);
-uint8_t dm=protocol::REPORT_DISP_MODE_AUTO;if(this->display_state_==display_options::AUTO){dm=protocol::REPORT_DISP_MODE_AUTO;this->display_power_internal_=true;}else if(this->display_state_==display_options::SET){dm=protocol::REPORT_DISP_MODE_SET;this->display_power_internal_=true;}else if(this->display_state_==display_options::ACT){dm=protocol::REPORT_DISP_MODE_ACT;this->display_power_internal_=true;}else if(this->display_state_==display_options::OUT){dm=protocol::REPORT_DISP_MODE_OUT;this->display_power_internal_=true;}else if(this->display_state_==display_options::OFF){this->display_power_internal_=false;if(this->display_mode_internal_==display_options::SET)dm=protocol::REPORT_DISP_MODE_SET;else if(this->display_mode_internal_==display_options::ACT)dm=protocol::REPORT_DISP_MODE_ACT;else if(this->display_mode_internal_==display_options::OUT)dm=protocol::REPORT_DISP_MODE_OUT;else dm=protocol::REPORT_DISP_MODE_AUTO;}else{dm=protocol::REPORT_DISP_MODE_AUTO;this->display_power_internal_=true;}packet[protocol::REPORT_DISP_MODE_BYTE]|=(dm<<protocol::REPORT_DISP_MODE_POS);if(this->display_power_internal_)packet[protocol::REPORT_DISP_ON_BYTE]|=protocol::REPORT_DISP_ON_MASK;if(this->display_unit_state_==display_unit_options::DEGF)packet[protocol::REPORT_DISP_F_BYTE]|=protocol::REPORT_DISP_F_MASK;if(this->plasma_state_){packet[protocol::REPORT_PLASMA1_BYTE]|=protocol::REPORT_PLASMA1_MASK;packet[protocol::REPORT_PLASMA2_BYTE]|=protocol::REPORT_PLASMA2_MASK;}if(this->sleep_state_)packet[protocol::REPORT_SLEEP_BYTE]|=protocol::REPORT_SLEEP_MASK;if(this->xfan_state_)packet[protocol::REPORT_XFAN_BYTE]|=protocol::REPORT_XFAN_MASK;if(this->save_state_)packet[protocol::REPORT_SAVE_BYTE]|=protocol::REPORT_SAVE_MASK;
-packet.insert(packet.begin(),protocol::CMD_OUT_PARAMS_SET);packet.insert(packet.begin(),protocol::SET_PACKET_LEN+2);uint8_t checksum=0;for(uint8_t i=0;i<packet.size();i++)checksum+=packet[i];packet.push_back(checksum);packet.insert(packet.begin(),protocol::SYNC);packet.insert(packet.begin(),protocol::SYNC);this->last_packet_sent_=millis();this->wait_response_=true;write_array(packet);log_packet(packet,true);switch(this->update_){case ACUpdate::NoUpdate:break;case ACUpdate::UpdateStart:this->update_=ACUpdate::UpdateClear;break;case ACUpdate::UpdateClear:this->update_=ACUpdate::NoUpdate;break;default:this->update_=ACUpdate::NoUpdate;break;}}
-bool SinclairACCNT::verify_packet(){if(this->serialProcess_.data.size()<5){ESP_LOGW(TAG,"Dropping invalid packet (length)");return false;}bool allowed=false;for(uint8_t p:allowedPackets)if(this->serialProcess_.data[3]==p){allowed=true;break;}if(!allowed){ESP_LOGW(TAG,"Dropping invalid packet (command [%02X] not allowed)",this->serialProcess_.data[3]);return false;}uint8_t checksum=0;for(uint8_t i=2;i<this->serialProcess_.data.size()-1;i++)checksum+=this->serialProcess_.data[i];if(checksum!=this->serialProcess_.data[this->serialProcess_.data.size()-1]){ESP_LOGD(TAG,"Dropping invalid packet (checksum)");return false;}return true;}
-void SinclairACCNT::handle_packet(){if(this->serialProcess_.data[3]==protocol::CMD_IN_UNIT_REPORT){this->serialProcess_.data.erase(this->serialProcess_.data.begin(),this->serialProcess_.data.begin()+4);this->serialProcess_.data.pop_back();this->processUnitReport();this->publish_state();}else ESP_LOGD(TAG,"Received unknown packet");}
-bool SinclairACCNT::processUnitReport(){bool hasChanged=false;climate::ClimateMode newMode=determine_mode();if(this->mode!=newMode)hasChanged=true;this->mode=newMode;const char* newFanMode=determine_fan_mode();if(this->has_custom_fan_mode()){if(strcmp(this->get_custom_fan_mode().c_str(),newFanMode)!=0)hasChanged=true;}else hasChanged=true;this->set_custom_fan_mode_(newFanMode);
-uint8_t high_byte=(this->serialProcess_.data[protocol::REPORT_TEMP_SET_BYTE]&protocol::REPORT_TEMP_SET_MASK)>>protocol::REPORT_TEMP_SET_POS;uint8_t low_byte=(this->serialProcess_.data[protocol::REPORT_TEMP_SET_LOW_BYTE]&protocol::REPORT_TEMP_SET_LOW_MASK)>>protocol::REPORT_TEMP_SET_LOW_POS;
-float newTargetTemperature;if(low_byte>=1&&low_byte<=8){newTargetTemperature=(float)(low_byte+7);}else{newTargetTemperature=(float)(16+high_byte);}if(this->target_temperature!=newTargetTemperature)hasChanged=true;this->update_target_temperature(newTargetTemperature);
-if(this->current_temperature_sensor_==nullptr){float newCur=(float)(((this->serialProcess_.data[protocol::REPORT_TEMP_ACT_BYTE]&protocol::REPORT_TEMP_ACT_MASK)>>protocol::REPORT_TEMP_ACT_POS)-protocol::REPORT_TEMP_ACT_OFF)/protocol::REPORT_TEMP_ACT_DIV;if(this->current_temperature!=newCur)hasChanged=true;this->update_current_temperature(newCur);}std::string vs=determine_vertical_swing();std::string hs=determine_horizontal_swing();this->update_swing_vertical(vs);this->update_swing_horizontal(hs);climate::ClimateSwingMode newSwing;if(vs==vertical_swing_options::FULL&&hs==horizontal_swing_options::FULL)newSwing=climate::CLIMATE_SWING_BOTH;else if(vs==vertical_swing_options::FULL)newSwing=climate::CLIMATE_SWING_VERTICAL;else if(hs==horizontal_swing_options::FULL)newSwing=climate::CLIMATE_SWING_HORIZONTAL;else newSwing=climate::CLIMATE_SWING_OFF;if(this->swing_mode!=newSwing)hasChanged=true;this->swing_mode=newSwing;this->update_display(determine_display());this->update_display_unit(determine_display_unit());this->update_plasma(determine_plasma());this->update_sleep(determine_sleep());this->update_xfan(determine_xfan());this->update_save(determine_save());return hasChanged;}
-climate::ClimateMode SinclairACCNT::determine_mode(){uint8_t mode=(this->serialProcess_.data[protocol::REPORT_MODE_BYTE]&protocol::REPORT_MODE_MASK)>>protocol::REPORT_MODE_POS;this->power_internal_=(this->serialProcess_.data[protocol::REPORT_PWR_BYTE]&protocol::REPORT_PWR_MASK)!=0;switch(mode){case protocol::REPORT_MODE_AUTO:this->mode_internal_=climate::CLIMATE_MODE_AUTO;break;case protocol::REPORT_MODE_COOL:this->mode_internal_=climate::CLIMATE_MODE_COOL;break;case protocol::REPORT_MODE_DRY:this->mode_internal_=climate::CLIMATE_MODE_DRY;break;case protocol::REPORT_MODE_FAN:this->mode_internal_=climate::CLIMATE_MODE_FAN_ONLY;break;case protocol::REPORT_MODE_HEAT:this->mode_internal_=climate::CLIMATE_MODE_HEAT;break;default:ESP_LOGW(TAG,"Received unknown climate mode");this->mode_internal_=climate::CLIMATE_MODE_OFF;break;}return this->power_internal_?this->mode_internal_:climate::CLIMATE_MODE_OFF;}
-const char* SinclairACCNT::determine_fan_mode(){uint8_t s1=(this->serialProcess_.data[protocol::REPORT_FAN_SPD1_BYTE]&protocol::REPORT_FAN_SPD1_MASK)>>protocol::REPORT_FAN_SPD1_POS;uint8_t s2=(this->serialProcess_.data[protocol::REPORT_FAN_SPD2_BYTE]&protocol::REPORT_FAN_SPD2_MASK)>>protocol::REPORT_FAN_SPD2_POS;bool q=(this->serialProcess_.data[protocol::REPORT_FAN_QUIET_BYTE]&protocol::REPORT_FAN_QUIET_MASK)!=0;bool t=(this->serialProcess_.data[protocol::REPORT_FAN_TURBO_BYTE]&protocol::REPORT_FAN_TURBO_MASK)!=0;if(t)return fan_modes::FAN_TURBO;if(q)return fan_modes::FAN_QUIET;switch(s1){case 8:return fan_modes::FAN_AUTO;case 9:return fan_modes::FAN_LOW;case 10:return fan_modes::FAN_MEDL;case 11:return fan_modes::FAN_MED;case 12:return fan_modes::FAN_MEDH;case 13:return fan_modes::FAN_HIGH;default:ESP_LOGW(TAG,"Received unknown fan mode (s1=%d s2=%d)",s1,s2);return fan_modes::FAN_AUTO;}}
-std::string SinclairACCNT::determine_vertical_swing(){uint8_t m=(this->serialProcess_.data[protocol::REPORT_VSWING_BYTE]&protocol::REPORT_VSWING_MASK)>>protocol::REPORT_VSWING_POS;switch(m){case protocol::REPORT_VSWING_OFF:return vertical_swing_options::OFF;case protocol::REPORT_VSWING_FULL:return vertical_swing_options::FULL;case protocol::REPORT_VSWING_DOWN:return vertical_swing_options::DOWN;case protocol::REPORT_VSWING_MIDD:return vertical_swing_options::MIDD;case protocol::REPORT_VSWING_MID:return vertical_swing_options::MID;case protocol::REPORT_VSWING_MIDU:return vertical_swing_options::MIDU;case protocol::REPORT_VSWING_UP:return vertical_swing_options::UP;case protocol::REPORT_VSWING_CDOWN:return vertical_swing_options::CDOWN;case protocol::REPORT_VSWING_CMIDD:return vertical_swing_options::CMIDD;case protocol::REPORT_VSWING_CMID:return vertical_swing_options::CMID;case protocol::REPORT_VSWING_CMIDU:return vertical_swing_options::CMIDU;case protocol::REPORT_VSWING_CUP:return vertical_swing_options::CUP;default:ESP_LOGW(TAG,"Received unknown vertical swing mode");return vertical_swing_options::OFF;}}
-std::string SinclairACCNT::determine_horizontal_swing(){uint8_t m=(this->serialProcess_.data[protocol::REPORT_HSWING_BYTE]&protocol::REPORT_HSWING_MASK)>>protocol::REPORT_HSWING_POS;switch(m){case protocol::REPORT_HSWING_OFF:return horizontal_swing_options::OFF;case protocol::REPORT_HSWING_FULL:return horizontal_swing_options::FULL;case protocol::REPORT_HSWING_CLEFT:return horizontal_swing_options::CLEFT;case protocol::REPORT_HSWING_CMIDL:return horizontal_swing_options::CMIDL;case protocol::REPORT_HSWING_CMID:return horizontal_swing_options::CMID;case protocol::REPORT_HSWING_CMIDR:return horizontal_swing_options::CMIDR;case protocol::REPORT_HSWING_CRIGHT:return horizontal_swing_options::CRIGHT;default:ESP_LOGW(TAG,"Received unknown horizontal swing mode");return horizontal_swing_options::OFF;}}
-std::string SinclairACCNT::determine_display(){uint8_t m=(this->serialProcess_.data[protocol::REPORT_DISP_MODE_BYTE]&protocol::REPORT_DISP_MODE_MASK)>>protocol::REPORT_DISP_MODE_POS;this->display_power_internal_=(this->serialProcess_.data[protocol::REPORT_DISP_ON_BYTE]&protocol::REPORT_DISP_ON_MASK);switch(m){case protocol::REPORT_DISP_MODE_AUTO:this->display_mode_internal_=display_options::AUTO;break;case protocol::REPORT_DISP_MODE_SET:this->display_mode_internal_=display_options::SET;break;case protocol::REPORT_DISP_MODE_ACT:this->display_mode_internal_=display_options::ACT;break;case protocol::REPORT_DISP_MODE_OUT:this->display_mode_internal_=display_options::OUT;break;default:ESP_LOGW(TAG,"Received unknown display mode");this->display_mode_internal_=display_options::AUTO;break;}return this->display_power_internal_?this->display_mode_internal_:display_options::OFF;}
-std::string SinclairACCNT::determine_display_unit(){return(this->serialProcess_.data[protocol::REPORT_DISP_F_BYTE]&protocol::REPORT_DISP_F_MASK)?display_unit_options::DEGF:display_unit_options::DEGC;}
-bool SinclairACCNT::determine_plasma(){return((this->serialProcess_.data[protocol::REPORT_PLASMA1_BYTE]&protocol::REPORT_PLASMA1_MASK)!=0)||((this->serialProcess_.data[protocol::REPORT_PLASMA2_BYTE]&protocol::REPORT_PLASMA2_MASK)!=0);}
-bool SinclairACCNT::determine_sleep(){return(this->serialProcess_.data[protocol::REPORT_SLEEP_BYTE]&protocol::REPORT_SLEEP_MASK)!=0;}
-bool SinclairACCNT::determine_xfan(){return(this->serialProcess_.data[protocol::REPORT_XFAN_BYTE]&protocol::REPORT_XFAN_MASK)!=0;}
-bool SinclairACCNT::determine_save(){return(this->serialProcess_.data[protocol::REPORT_SAVE_BYTE]&protocol::REPORT_SAVE_MASK)!=0;}
-void SinclairACCNT::on_vertical_swing_change(const std::string &s){if(this->state_!=ACState::Ready)return;this->update_=ACUpdate::UpdateStart;this->vertical_swing_state_=s;}
-void SinclairACCNT::on_horizontal_swing_change(const std::string &s){if(this->state_!=ACState::Ready)return;this->update_=ACUpdate::UpdateStart;this->horizontal_swing_state_=s;}
-void SinclairACCNT::on_display_change(const std::string &s){if(this->state_!=ACState::Ready)return;this->update_=ACUpdate::UpdateStart;this->display_state_=s;}
-void SinclairACCNT::on_display_unit_change(const std::string &s){if(this->state_!=ACState::Ready)return;this->update_=ACUpdate::UpdateStart;this->display_unit_state_=s;}
-void SinclairACCNT::on_plasma_change(bool v){if(this->state_!=ACState::Ready)return;this->update_=ACUpdate::UpdateStart;this->plasma_state_=v;}
-void SinclairACCNT::on_sleep_change(bool v){if(this->state_!=ACState::Ready)return;this->update_=ACUpdate::UpdateStart;this->sleep_state_=v;}
-void SinclairACCNT::on_xfan_change(bool v){if(this->state_!=ACState::Ready)return;this->update_=ACUpdate::UpdateStart;this->xfan_state_=v;}
-void SinclairACCNT::on_save_change(bool v){if(this->state_!=ACState::Ready)return;this->update_=ACUpdate::UpdateStart;this->save_state_=v;}
-}  // namespace CNT
-}  // namespace sinclair_ac
-}  // namespace esphome
+void SinclairACCNT::send_packet() {
+  std::vector<uint8_t> packet(protocol::SET_PACKET_LEN, 0);
+
+  // Защита от спама (как у тебя было)
+  if (this->wait_response_ && this->update_ == ACUpdate::NoUpdate &&
+      (millis() - this->last_packet_sent_) < protocol::TIME_REFRESH_PERIOD_MS) {
+    return;
+  }
+
+  packet[protocol::SET_CONST_02_BYTE] = protocol::SET_CONST_02_VAL;
+  packet[protocol::SET_CONST_BIT_BYTE] = protocol::SET_CONST_BIT_MASK;
+
+  switch (this->update_) {
+    default:
+    case ACUpdate::NoUpdate:
+      packet[protocol::SET_NOCHANGE_BYTE] |= protocol::SET_NOCHANGE_MASK;
+      break;
+    case ACUpdate::UpdateStart:
+      packet[protocol::SET_AF_BYTE] = protocol::SET_AF_VAL;
+      break;
+    case ACUpdate::UpdateClear:
+      break;
+  }
+
+  // === РЕЖИМ (как у тебя было) ===
+  uint8_t mode = protocol::REPORT_MODE_AUTO;
+  bool power = false;
+  switch (this->mode) {
+    case climate::CLIMATE_MODE_AUTO: mode = protocol::REPORT_MODE_AUTO; power = true; break;
+    case climate::CLIMATE_MODE_COOL: mode = protocol::REPORT_MODE_COOL; power = true; break;
+    case climate::CLIMATE_MODE_DRY: mode = protocol::REPORT_MODE_DRY; power = true; break;
+    case climate::CLIMATE_MODE_FAN_ONLY: mode = protocol::REPORT_MODE_FAN; power = true; break;
+    case climate::CLIMATE_MODE_HEAT: mode = protocol::REPORT_MODE_HEAT; power = true; break;
+    default:
+    case climate::CLIMATE_MODE_OFF:
+      switch (this->mode_internal_) {
+        case climate::CLIMATE_MODE_AUTO: mode = protocol::REPORT_MODE_AUTO; break;
+        case climate::CLIMATE_MODE_COOL: mode = protocol::REPORT_MODE_COOL; break;
+        case climate::CLIMATE_MODE_DRY: mode = protocol::REPORT_MODE_DRY; break;
+        case climate::CLIMATE_MODE_FAN_ONLY: mode = protocol::REPORT_MODE_FAN; break;
+        case climate::CLIMATE_MODE_HEAT: mode = protocol::REPORT_MODE_HEAT; break;
+      }
+      power = false;
+      break;
+  }
+  packet[protocol::REPORT_MODE_BYTE] |= (mode << protocol::REPORT_MODE_POS);
+  if (power) packet[protocol::REPORT_PWR_BYTE] |= protocol::REPORT_PWR_MASK;
+
+  // === ТЕМПЕРАТУРА (ИЗМЕНЕНО ДЛЯ GREE) ===
+  // Твоя старая логика с low_byte/high_byte для Panasonic здесь не подходит.
+  // Для Gree UART (протокол 0x2C) байт 9 кодирует температуру как (temp - 16) * 0x10.
+  // Источник: bekmansurov/gree-hvac-protocol [citation:16][citation:21]
+  int temp_int = (int) roundf(this->target_temperature);
+  if (temp_int < 16) temp_int = 16;
+  if (temp_int > 30) temp_int = 30;
+  packet[protocol::REPORT_TEMP_SET_BYTE] = (uint8_t)((temp_int - 16) * 0x10);
+
+  // === ВЕНТИЛЯТОР (как у тебя было) ===
+  uint8_t fanSpeed1 = 8, fanSpeed2 = 0;
+  bool fanQuiet = false, fanTurbo = false;
+  if (this->has_custom_fan_mode()) {
+    const char *m = this->get_custom_fan_mode().c_str();
+    if (strcmp(m, fan_modes::FAN_AUTO) == 0) { fanSpeed1 = 8; fanSpeed2 = 0; }
+    else if (strcmp(m, fan_modes::FAN_LOW) == 0) { fanSpeed1 = 9; fanSpeed2 = 1; }
+    else if (strcmp(m, fan_modes::FAN_QUIET) == 0) { fanSpeed1 = 9; fanSpeed2 = 1; fanQuiet = true; }
+    else if (strcmp(m, fan_modes::FAN_MEDL) == 0) { fanSpeed1 = 10; fanSpeed2 = 2; }
+    else if (strcmp(m, fan_modes::FAN_MED) == 0) { fanSpeed1 = 11; fanSpeed2 = 2; }
+    else if (strcmp(m, fan_modes::FAN_MEDH) == 0) { fanSpeed1 = 12; fanSpeed2 = 3; }
+    else if (strcmp(m, fan_modes::FAN_HIGH) == 0) { fanSpeed1 = 13; fanSpeed2 = 3; }
+    else if (strcmp(m, fan_modes::FAN_TURBO) == 0) { fanSpeed1 = 8; fanSpeed2 = 0; fanTurbo = true; }
+  }
+  packet[protocol::REPORT_FAN_SPD1_BYTE] |= (fanSpeed1 << protocol::REPORT_FAN_SPD1_POS);
+  packet[protocol::REPORT_FAN_SPD2_BYTE] |= (fanSpeed2 << protocol::REPORT_FAN_SPD2_POS);
+  if (fanTurbo) packet[protocol::REPORT_FAN_TURBO_BYTE] |= protocol::REPORT_FAN_TURBO_MASK;
+  if (fanQuiet) packet[protocol::REPORT_FAN_QUIET_BYTE] |= protocol::REPORT_FAN_QUIET_MASK;
+
+  // === VERTICAL SWING (как у тебя было) ===
+  uint8_t vs = protocol::REPORT_VSWING_OFF;
+  if (this->vertical_swing_state_ == vertical_swing_options::OFF) vs = protocol::REPORT_VSWING_OFF;
+  else if (this->vertical_swing_state_ == vertical_swing_options::FULL) vs = protocol::REPORT_VSWING_FULL;
+  else if (this->vertical_swing_state_ == vertical_swing_options::DOWN) vs = protocol::REPORT_VSWING_DOWN;
+  else if (this->vertical_swing_state_ == vertical_swing_options::MIDD) vs = protocol::REPORT_VSWING_MIDD;
+  else if (this->vertical_swing_state_ == vertical_swing_options::MID) vs = protocol::REPORT_VSWING_MID;
+  else if (this->vertical_swing_state_ == vertical_swing_options::MIDU) vs = protocol::REPORT_VSWING_MIDU;
+  else if (this->vertical_swing_state_ == vertical_swing_options::UP) vs = protocol::REPORT_VSWING_UP;
+  else if (this->vertical_swing_state_ == vertical_swing_options::CDOWN) vs = protocol::REPORT_VSWING_CDOWN;
+  else if (this->vertical_swing_state_ == vertical_swing_options::CMIDD) vs = protocol::REPORT_VSWING_CMIDD;
+  else if (this->vertical_swing_state_ == vertical_swing_options::CMID) vs = protocol::REPORT_VSWING_CMID;
+  else if (this->vertical_swing_state_ == vertical_swing_options::CMIDU) vs = protocol::REPORT_VSWING_CMIDU;
+  else if (this->vertical_swing_state_ == vertical_swing_options::CUP) vs = protocol::REPORT_VSWING_CUP;
+  packet[protocol::REPORT_VSWING_BYTE] |= (vs << protocol::REPORT_VSWING_POS);
+
+  // === HORIZONTAL SWING (как у тебя было) ===
+  uint8_t hs = protocol::REPORT_HSWING_OFF;
+  if (this->horizontal_swing_state_ == horizontal_swing_options::OFF) hs = protocol::REPORT_HSWING_OFF;
+  else if (this->horizontal_swing_state_ == horizontal_swing_options::FULL) hs = protocol::REPORT_HSWING_FULL;
+  else if (this->horizontal_swing_state_ == horizontal_swing_options::CLEFT) hs = protocol::REPORT_HSWING_CLEFT;
+  else if (this->horizontal_swing_state_ == horizontal_swing_options::CMIDL) hs = protocol::REPORT_HSWING_CMIDL;
+  else if (this->horizontal_swing_state_ == horizontal_swing_options::CMID) hs = protocol::REPORT_HSWING_CMID;
+  else if (this->horizontal_swing_state_ == horizontal_swing_options::CMIDR) hs = protocol::REPORT_HSWING_CMIDR;
+  else if (this->horizontal_swing_state_ == horizontal_swing_options::CRIGHT) hs = protocol::REPORT_HSWING_CRIGHT;
+  packet[protocol::REPORT_HSWING_BYTE] |= (hs << protocol::REPORT_HSWING_POS);
+
+  // === DISPLAY (как у тебя было) ===
+  uint8_t dm = protocol::REPORT_DISP_MODE_AUTO;
+  if (this->display_state_ == display_options::AUTO) { dm = protocol::REPORT_DISP_MODE_AUTO; this->display_power_internal_ = true; }
+  else if (this->display_state_ == display_options::SET) { dm = protocol::REPORT_DISP_MODE_SET; this->display_power_internal_ = true; }
+  else if (this->display_state_ == display_options::ACT) { dm = protocol::REPORT_DISP_MODE_ACT; this->display_power_internal_ = true; }
+  else if (this->display_state_ == display_options::OUT) { dm = protocol::REPORT_DISP_MODE_OUT; this->display_power_internal_ = true; }
+  else if (this->display_state_ == display_options::OFF) {
+    this->display_power_internal_ = false;
+    if (this->display_mode_internal_ == display_options::SET) dm = protocol::REPORT_DISP_MODE_SET;
+    else if (this->display_mode_internal_ == display_options::ACT) dm = protocol::REPORT_DISP_MODE_ACT;
+    else if (this->display_mode_internal_ == display_options::OUT) dm = protocol::REPORT_DISP_MODE_OUT;
+    else dm = protocol::REPORT_DISP_MODE_AUTO;
+  } else { dm = protocol::REPORT_DISP_MODE_AUTO; this->display_power_internal_ = true; }
+  packet[protocol::REPORT_DISP_MODE_BYTE] |= (dm << protocol::REPORT_DISP_MODE_POS);
+  if (this->display_power_internal_) packet[protocol::REPORT_DISP_ON_BYTE] |= protocol::REPORT_DISP_ON_MASK;
+  if (this->display_unit_state_ == display_unit_options::DEGF) packet[protocol::REPORT_DISP_F_BYTE] |= protocol::REPORT_DISP_F_MASK;
+
+  // === ПРОЧЕЕ (как у тебя было) ===
+  if (this->plasma_state_) {
+    packet[protocol::REPORT_PLASMA1_BYTE] |= protocol::REPORT_PLASMA1_MASK;
+    packet[protocol::REPORT_PLASMA2_BYTE] |= protocol::REPORT_PLASMA2_MASK;
+  }
+  if (this->sleep_state_) packet[protocol::REPORT_SLEEP_BYTE] |= protocol::REPORT_SLEEP_MASK;
+  if (this->xfan_state_) packet[protocol::REPORT_XFAN_BYTE] |= protocol::REPORT_XFAN_MASK;
+  if (this->save_state_) packet[protocol::REPORT_SAVE_BYTE] |= protocol::REPORT_SAVE_MASK;
+
+  // === ФИНАЛИЗАЦИЯ ПАКЕТА (как у тебя было) ===
+  packet.insert(packet.begin(), protocol::CMD_OUT_PARAMS_SET);
+  packet.insert(packet.begin(), protocol::SET_PACKET_LEN + 2);
+  uint8_t checksum = 0;
+  for (uint8_t i = 0; i < packet.size(); i++) checksum += packet[i];
+  packet.push_back(checksum);
+  packet.insert(packet.begin(), protocol::SYNC);
+  packet.insert(packet.begin(), protocol::SYNC);
+
+  this->last_packet_sent_ = millis();
+  this->wait_response_ = true;
+  write_array(packet);
+  log_packet(packet, true);
+
+  switch (this->update_) {
+    case ACUpdate::NoUpdate: break;
+    case ACUpdate::UpdateStart: this->update_ = ACUpdate::UpdateClear; break;
+    case ACUpdate::UpdateClear: this->update_ = ACUpdate::NoUpdate; break;
+    default: this->update_ = ACUpdate::NoUpdate; break;
+  }
+}
