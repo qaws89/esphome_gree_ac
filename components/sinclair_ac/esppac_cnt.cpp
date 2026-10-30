@@ -399,6 +399,22 @@ std::string SinclairACCNT::determine_display() {
   return this->display_power_internal_ ? this->display_mode_internal_ : display_options::OFF;
 }
 
+std::string SinclairACCNT::determine_display() {
+  uint8_t m = (this->serialProcess_.data[protocol::REPORT_DISP_MODE_BYTE] & protocol::REPORT_DISP_MODE_MASK) >> protocol::REPORT_DISP_MODE_POS;
+  this->display_power_internal_ = (this->serialProcess_.data[protocol::REPORT_DISP_ON_BYTE] & protocol::REPORT_DISP_ON_MASK);
+  switch (m) {
+    case protocol::REPORT_DISP_MODE_AUTO: this->display_mode_internal_ = display_options::AUTO; break;
+    case protocol::REPORT_DISP_MODE_SET: this->display_mode_internal_ = display_options::SET; break;
+    case protocol::REPORT_DISP_MODE_ACT: this->display_mode_internal_ = display_options::ACT; break;
+    case protocol::REPORT_DISP_MODE_OUT: this->display_mode_internal_ = display_options::OUT; break;
+    default:
+      ESP_LOGW(TAG, "Received unknown display mode");
+      this->display_mode_internal_ = display_options::AUTO;
+      break;
+  }
+  return this->display_power_internal_ ? this->display_mode_internal_ : display_options::OFF;
+}
+
 std::string SinclairACCNT::determine_display_unit() {
   return (this->serialProcess_.data[protocol::REPORT_DISP_F_BYTE] & protocol::REPORT_DISP_F_MASK)
              ? display_unit_options::DEGF
