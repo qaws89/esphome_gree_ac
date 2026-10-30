@@ -56,7 +56,7 @@ namespace protocol {
     static const uint8_t REPORT_TEMP_SET_POS   = 4;
     static const uint8_t REPORT_TEMP_SET_OFF   = 16;
 
-    static const uint8_t REPORT_TEMP_SET_LOW_BYTE = 43;
+    static const uint8_t REPORT_TEMP_SET_LOW_BYTE = 41;
     static const uint8_t REPORT_TEMP_SET_LOW_MASK = 0b11110000;
     static const uint8_t REPORT_TEMP_SET_LOW_POS  = 4;
     static const uint8_t REPORT_TEMP_SET_LOW_OFF  = 15;
