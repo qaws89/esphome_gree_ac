@@ -157,30 +157,26 @@ void SinclairACCNT::send_packet() {
   if (fanTurbo) packet[protocol::REPORT_FAN_TURBO_BYTE] |= protocol::REPORT_FAN_TURBO_MASK;
   if (fanQuiet) packet[protocol::REPORT_FAN_QUIET_BYTE] |= protocol::REPORT_FAN_QUIET_MASK;
 
-  uint8_t vs = protocol::REPORT_VSWING_OFF;
-  if (this->vertical_swing_state_ == vertical_swing_options::OFF) vs = protocol::REPORT_VSWING_OFF;
-  else if (this->vertical_swing_state_ == vertical_swing_options::FULL) vs = protocol::REPORT_VSWING_FULL;
-  else if (this->vertical_swing_state_ == vertical_swing_options::DOWN) vs = protocol::REPORT_VSWING_DOWN;
-  else if (this->vertical_swing_state_ == vertical_swing_options::MIDD) vs = protocol::REPORT_VSWING_MIDD;
-  else if (this->vertical_swing_state_ == vertical_swing_options::MID) vs = protocol::REPORT_VSWING_MID;
-  else if (this->vertical_swing_state_ == vertical_swing_options::MIDU) vs = protocol::REPORT_VSWING_MIDU;
-  else if (this->vertical_swing_state_ == vertical_swing_options::UP) vs = protocol::REPORT_VSWING_UP;
-  else if (this->vertical_swing_state_ == vertical_swing_options::CDOWN) vs = protocol::REPORT_VSWING_CDOWN;
-  else if (this->vertical_swing_state_ == vertical_swing_options::CMIDD) vs = protocol::REPORT_VSWING_CMIDD;
-  else if (this->vertical_swing_state_ == vertical_swing_options::CMID) vs = protocol::REPORT_VSWING_CMID;
-  else if (this->vertical_swing_state_ == vertical_swing_options::CMIDU) vs = protocol::REPORT_VSWING_CMIDU;
-  else if (this->vertical_swing_state_ == vertical_swing_options::CUP) vs = protocol::REPORT_VSWING_CUP;
-  packet[protocol::REPORT_VSWING_BYTE] |= (vs << protocol::REPORT_VSWING_POS);
+  // === GREE: БАЙТ 8 = MODE + FAN (ИСПРАВЛЕНИЕ) ===
+  uint8_t gree_mode = 0x10; // OFF по умолчанию
+  if (power) {
+    switch (this->mode) {
+      case climate::CLIMATE_MODE_COOL:     gree_mode = 0x90; break;
+      case climate::CLIMATE_MODE_HEAT:     gree_mode = 0xC0; break;
+      case climate::CLIMATE_MODE_FAN_ONLY: gree_mode = 0xB0; break;
+      case climate::CLIMATE_MODE_DRY:      gree_mode = 0xA1; break;
+      case climate::CLIMATE_MODE_AUTO:     gree_mode = 0x80; break;
+      default:                             gree_mode = 0x90; break;
+    }
+  }
+  uint8_t fan_bits = 0;
+  if (fanSpeed2 == 1) fan_bits = 0x01;
+  else if (fanSpeed2 == 2) fan_bits = 0x02;
+  else if (fanSpeed2 == 3) fan_bits = 0x03;
+  gree_mode |= fan_bits;
+  packet[8] = gree_mode;
 
-  uint8_t hs = protocol::REPORT_HSWING_OFF;
-  if (this->horizontal_swing_state_ == horizontal_swing_options::OFF) hs = protocol::REPORT_HSWING_OFF;
-  else if (this->horizontal_swing_state_ == horizontal_swing_options::FULL) hs = protocol::REPORT_HSWING_FULL;
-  else if (this->horizontal_swing_state_ == horizontal_swing_options::CLEFT) hs = protocol::REPORT_HSWING_CLEFT;
-  else if (this->horizontal_swing_state_ == horizontal_swing_options::CMIDL) hs = protocol::REPORT_HSWING_CMIDL;
-  else if (this->horizontal_swing_state_ == horizontal_swing_options::CMID) hs = protocol::REPORT_HSWING_CMID;
-  else if (this->horizontal_swing_state_ == horizontal_swing_options::CMIDR) hs = protocol::REPORT_HSWING_CMIDR;
-  else if (this->horizontal_swing_state_ == horizontal_swing_options::CRIGHT) hs = protocol::REPORT_HSWING_CRIGHT;
-  packet[protocol::REPORT_HSWING_BYTE] |= (hs << protocol::REPORT_HSWING_POS);
+  // Свинги в байт 8 больше не пишем (для TX). Для RX они остаются в .h.
 
   uint8_t dm = protocol::REPORT_DISP_MODE_AUTO;
   if (this->display_state_ == display_options::AUTO) { dm = protocol::REPORT_DISP_MODE_AUTO; this->display_power_internal_ = true; }
@@ -226,7 +222,6 @@ void SinclairACCNT::send_packet() {
     default: this->update_ = ACUpdate::NoUpdate; break;
   }
 }
-
 bool SinclairACCNT::verify_packet() {
   if (this->serialProcess_.data.size() < 5) {
     ESP_LOGW(TAG, "Dropping invalid packet (length)");
