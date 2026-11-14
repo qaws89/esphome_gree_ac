@@ -157,26 +157,26 @@ void SinclairACCNT::send_packet() {
   if (fanTurbo) packet[protocol::REPORT_FAN_TURBO_BYTE] |= protocol::REPORT_FAN_TURBO_MASK;
   if (fanQuiet) packet[protocol::REPORT_FAN_QUIET_BYTE] |= protocol::REPORT_FAN_QUIET_MASK;
 
-  // === GREE: БАЙТ 8 = MODE + FAN (ИСПРАВЛЕНИЕ) ===
-  uint8_t gree_mode = 0x10; // OFF по умолчанию
-  if (power) {
-    switch (this->mode) {
-      case climate::CLIMATE_MODE_COOL:     gree_mode = 0x90; break;
-      case climate::CLIMATE_MODE_HEAT:     gree_mode = 0xC0; break;
-      case climate::CLIMATE_MODE_FAN_ONLY: gree_mode = 0xB0; break;
-      case climate::CLIMATE_MODE_DRY:      gree_mode = 0xA1; break;
-      case climate::CLIMATE_MODE_AUTO:     gree_mode = 0x80; break;
-      default:                             gree_mode = 0x90; break;
+  // === GREE: БАЙТ 8 = MODE + FAN. Заполняем ТОЛЬКО при смене режима ===
+  if (this->update_ == ACUpdate::UpdateStart) {
+    uint8_t gree_mode = 0x10; // OFF по умолчанию
+    if (power) {
+      switch (this->mode) {
+        case climate::CLIMATE_MODE_COOL:     gree_mode = 0x90; break;
+        case climate::CLIMATE_MODE_HEAT:     gree_mode = 0xC0; break;
+        case climate::CLIMATE_MODE_FAN_ONLY: gree_mode = 0xB0; break;
+        case climate::CLIMATE_MODE_DRY:      gree_mode = 0xA1; break;
+        case climate::CLIMATE_MODE_AUTO:     gree_mode = 0x80; break;
+        default:                             gree_mode = 0x90; break;
+      }
     }
+    uint8_t fan_bits = 0;
+    if (fanSpeed2 == 1) fan_bits = 0x01;
+    else if (fanSpeed2 == 2) fan_bits = 0x02;
+    else if (fanSpeed2 == 3) fan_bits = 0x03;
+    gree_mode |= fan_bits;
+    packet[8] = gree_mode;
   }
-  uint8_t fan_bits = 0;
-  if (fanSpeed2 == 1) fan_bits = 0x01;
-  else if (fanSpeed2 == 2) fan_bits = 0x02;
-  else if (fanSpeed2 == 3) fan_bits = 0x03;
-  gree_mode |= fan_bits;
-  packet[8] = gree_mode;
-
-  // Свинги в байт 8 больше не пишем (для TX). Для RX они остаются в .h.
 
   uint8_t dm = protocol::REPORT_DISP_MODE_AUTO;
   if (this->display_state_ == display_options::AUTO) { dm = protocol::REPORT_DISP_MODE_AUTO; this->display_power_internal_ = true; }
