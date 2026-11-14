@@ -1,4 +1,3 @@
-// based on: https://github.com/DomiStyle/esphome-panasonic-ac
 #pragma once
 
 #include "esphome/components/climate/climate.h"
@@ -137,19 +136,33 @@ static const uint8_t SET_NOCHANGE_MASK = 0b00001000;
 static const uint8_t SET_CONST_BIT_BYTE = 7;
 static const uint8_t SET_CONST_BIT_MASK = 0b00000010;
 
+static const unsigned long TIME_REFRESH_PERIOD_MS = 300;
+static const unsigned long TIME_TIMEOUT_INACTIVE_MS = 1000;
+
 // Electrolux: температура 8–15°C -> байт 43, шаг 0x10, база 8
 static const uint8_t REPORT_TEMP_ELX_LOW_BYTE = 43;
 static const uint8_t REPORT_TEMP_ELX_LOW_BASE = 8;
 static const uint8_t REPORT_TEMP_ELX_LOW_STEP = 0x10;
 
-// Electrolux: температура 16–30°C -> байт 4 (гипотеза, проверить кадрами)
+// Electrolux: температура 16–30°C -> байт 4 (гипотеза)
 static const uint8_t REPORT_TEMP_ELX_HIGH_BYTE = 4;
 static const uint8_t REPORT_TEMP_ELX_HIGH_BASE = 16;
 static const uint8_t REPORT_TEMP_ELX_HIGH_STEP = 0x10;
 static const uint8_t REPORT_TEMP_ELX_HIGH_OFF = 0x40;
 
-static const unsigned long TIME_REFRESH_PERIOD_MS = 300;
-static const unsigned long TIME_TIMEOUT_INACTIVE_MS = 1000;
+// Electrolux/Gree: режим и вентилятор в байте 10 (чтение)
+static const uint8_t REPORT_GREE_MODE_BYTE = 10;
+static const uint8_t REPORT_GREE_MODE_MASK = 0xF0;
+static const uint8_t REPORT_GREE_MODE_POS = 4;
+static const uint8_t REPORT_GREE_FAN_MASK = 0x0F;
+static const uint8_t REPORT_GREE_FAN_POS = 0;
+
+static const uint8_t GREE_MODE_AUTO = 0x8;
+static const uint8_t GREE_MODE_COOL = 0x9;
+static const uint8_t GREE_MODE_DRY = 0xA;
+static const uint8_t GREE_MODE_FAN = 0xB;
+static const uint8_t GREE_MODE_HEAT = 0xC;
+static const uint8_t GREE_MODE_OFF = 0x1;
 }  // namespace protocol
 
 const std::vector<uint8_t> allowedPackets = {protocol::CMD_IN_UNIT_REPORT};
