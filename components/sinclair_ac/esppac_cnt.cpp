@@ -157,26 +157,24 @@ void SinclairACCNT::send_packet() {
   if (fanTurbo) packet[protocol::REPORT_FAN_TURBO_BYTE] |= protocol::REPORT_FAN_TURBO_MASK;
   if (fanQuiet) packet[protocol::REPORT_FAN_QUIET_BYTE] |= protocol::REPORT_FAN_QUIET_MASK;
 
-  // === GREE: БАЙТ 8 = MODE + FAN. Заполняем ТОЛЬКО при смене режима ===
-  if (this->update_ == ACUpdate::UpdateStart) {
-    uint8_t gree_mode = 0x10; // OFF по умолчанию
-    if (power) {
-      switch (this->mode) {
-        case climate::CLIMATE_MODE_COOL:     gree_mode = 0x90; break;
-        case climate::CLIMATE_MODE_HEAT:     gree_mode = 0xC0; break;
-        case climate::CLIMATE_MODE_FAN_ONLY: gree_mode = 0xB0; break;
-        case climate::CLIMATE_MODE_DRY:      gree_mode = 0xA1; break;
-        case climate::CLIMATE_MODE_AUTO:     gree_mode = 0x80; break;
-        default:                             gree_mode = 0x90; break;
-      }
+  // === GREE: БАЙТ 8 = MODE + FAN. Заполняем всегда (для проверки) ===
+  uint8_t gree_mode = 0x10;
+  if (power) {
+    switch (this->mode) {
+      case climate::CLIMATE_MODE_COOL:     gree_mode = 0x90; break;
+      case climate::CLIMATE_MODE_HEAT:     gree_mode = 0xC0; break;
+      case climate::CLIMATE_MODE_FAN_ONLY: gree_mode = 0xB0; break;
+      case climate::CLIMATE_MODE_DRY:      gree_mode = 0xA1; break;
+      case climate::CLIMATE_MODE_AUTO:     gree_mode = 0x80; break;
+      default:                             gree_mode = 0x90; break;
     }
-    uint8_t fan_bits = 0;
-    if (fanSpeed2 == 1) fan_bits = 0x01;
-    else if (fanSpeed2 == 2) fan_bits = 0x02;
-    else if (fanSpeed2 == 3) fan_bits = 0x03;
-    gree_mode |= fan_bits;
-    packet[8] = gree_mode;
   }
+  uint8_t fan_bits = 0;
+  if (fanSpeed2 == 1) fan_bits = 0x01;
+  else if (fanSpeed2 == 2) fan_bits = 0x02;
+  else if (fanSpeed2 == 3) fan_bits = 0x03;
+  gree_mode |= fan_bits;
+  packet[8] = gree_mode;
 
   uint8_t dm = protocol::REPORT_DISP_MODE_AUTO;
   if (this->display_state_ == display_options::AUTO) { dm = protocol::REPORT_DISP_MODE_AUTO; this->display_power_internal_ = true; }
@@ -304,39 +302,29 @@ bool SinclairACCNT::processUnitReport() {
 }
 
 climate::ClimateMode SinclairACCNT::determine_mode() {
-  uint8_t mode = (this->serialProcess_.data[protocol::REPORT_MODE_BYTE] & protocol::REPORT_MODE_MASK) >> protocol::REPORT_MODE_POS;
-  this->power_internal_ = (this->serialProcess_.data[protocol::REPORT_PWR_BYTE] & protocol::REPORT_PWR_MASK) != 0;
-  switch (mode) {
-    case protocol::REPORT_MODE_AUTO: this->mode_internal_ = climate::CLIMATE_MODE_AUTO; break;
-    case protocol::REPORT_MODE_COOL: this->mode_internal_ = climate::CLIMATE_MODE_COOL; break;
-    case protocol::REPORT_MODE_DRY: this->mode_internal_ = climate::CLIMATE_MODE_DRY; break;
-    case protocol::REPORT_MODE_FAN: this->mode_internal_ = climate::CLIMATE_MODE_FAN_ONLY; break;
-    case protocol::REPORT_MODE_HEAT: this->mode_internal_ = climate::CLIMATE_MODE_HEAT; break;
+  uint8_t m = (this->serialProcess_.data[protocol::REPORT_GREE_MODE_BYTE] & protocol::REPORT_GREE_MODE_MASK) >> protocol::REPORT_GREE_MODE_POS;
+  switch (m) {
+    case protocol::GREE_MODE_AUTO: this->mode_internal_ = climate::CLIMATE_MODE_AUTO; this->power_internal_ = true; break;
+    case protocol::GREE_MODE_COOL: this->mode_internal_ = climate::CLIMATE_MODE_COOL; this->power_internal_ = true; break;
+    case protocol::GREE_MODE_DRY:  this->mode_internal_ = climate::CLIMATE_MODE_DRY;  this->power_internal_ = true; break;
+    case protocol::GREE_MODE_FAN:  this->mode_internal_ = climate::CLIMATE_MODE_FAN_ONLY; this->power_internal_ = true; break;
+    case protocol::GREE_MODE_HEAT: this->mode_internal_ = climate::CLIMATE_MODE_HEAT; this->power_internal_ = true; break;
     default:
-      ESP_LOGW(TAG, "Received unknown climate mode");
       this->mode_internal_ = climate::CLIMATE_MODE_OFF;
+      this->power_internal_ = false;
       break;
   }
   return this->power_internal_ ? this->mode_internal_ : climate::CLIMATE_MODE_OFF;
 }
 
 const char *SinclairACCNT::determine_fan_mode() {
-  uint8_t s1 = (this->serialProcess_.data[protocol::REPORT_FAN_SPD1_BYTE] & protocol::REPORT_FAN_SPD1_MASK) >> protocol::REPORT_FAN_SPD1_POS;
-  uint8_t s2 = (this->serialProcess_.data[protocol::REPORT_FAN_SPD2_BYTE] & protocol::REPORT_FAN_SPD2_MASK) >> protocol::REPORT_FAN_SPD2_POS;
-  bool q = (this->serialProcess_.data[protocol::REPORT_FAN_QUIET_BYTE] & protocol::REPORT_FAN_QUIET_MASK) != 0;
-  bool t = (this->serialProcess_.data[protocol::REPORT_FAN_TURBO_BYTE] & protocol::REPORT_FAN_TURBO_MASK) != 0;
-  if (t) return fan_modes::FAN_TURBO;
-  if (q) return fan_modes::FAN_QUIET;
-  switch (s1) {
-    case 8: return fan_modes::FAN_AUTO;
-    case 9: return fan_modes::FAN_LOW;
-    case 10: return fan_modes::FAN_MEDL;
-    case 11: return fan_modes::FAN_MED;
-    case 12: return fan_modes::FAN_MEDH;
-    case 13: return fan_modes::FAN_HIGH;
-    default:
-      ESP_LOGW(TAG, "Received unknown fan mode (s1=%d s2=%d)", s1, s2);
-      return fan_modes::FAN_AUTO;
+  uint8_t f = (this->serialProcess_.data[protocol::REPORT_GREE_MODE_BYTE] & protocol::REPORT_GREE_FAN_MASK) >> protocol::REPORT_GREE_FAN_POS;
+  switch (f) {
+    case 0: return fan_modes::FAN_AUTO;
+    case 1: return fan_modes::FAN_LOW;
+    case 2: return fan_modes::FAN_MED;
+    case 3: return fan_modes::FAN_HIGH;
+    default: return fan_modes::FAN_AUTO;
   }
 }
 
